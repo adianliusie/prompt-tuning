@@ -7,7 +7,7 @@ def get_model_parser():
     model_parser.add_argument('--transformer', type=str, default='flan-t5-base', help='transformer to use (default=robert-large)')
     model_parser.add_argument('--maxlen', type=int, default=512, help='max length of transformer inputs')
     model_parser.add_argument('--rand-seed', type=int, default=None, help='random seed for reproducibility')
-    model_parser.add_argument('--template', type=str, default='<t>', help='formatting of input text')
+    model_parser.add_argument('--template', type=str, default='write a wikipedia article about <n>', help='formatting of input text')
     return model_parser
 
 def get_train_parser():

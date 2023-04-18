@@ -33,41 +33,58 @@ class Evaluater(Trainer):
         self.load_model()
             
     #== loading and saving generated texts =========================================================#
-    def load_pred_texts(self, dataset:str, mode:str='test'):
-        if not self.texts_exist(dataset, mode):
+    def load_pred_texts(self, dataset:str, mode:str='test', template=None):
+        if not self.texts_exist(dataset, mode, template):
             self.setup_helpers()
-            texts = self.generate_texts(dataset, mode)
-            self.save_cache_texts(texts, dataset, mode)
-        texts = self.load_cached_texts(dataset, mode)
+            texts = self.generate_texts(dataset, mode, template)
+            self.save_cache_texts(texts, dataset, mode, template)
+        texts = self.load_cached_texts(dataset, mode, template)
         return texts
 
-    def save_cache_texts(self, texts:dict, dataset:str, mode:str):
-        text_cache_path = self.get_text_cache_path(dataset, mode)
+    def save_cache_texts(self, texts:dict, dataset:str, mode:str, template=None):
+        text_cache_path = self.get_text_cache_path(dataset, mode, template)
         with open(text_cache_path, 'wb') as handle:
             pickle.dump(texts, handle)
 
-    def load_cached_texts(self, dataset:str, mode:str)->dict:
-        text_cache_path = self.get_text_cache_path(dataset, mode)
+    def load_cached_texts(self, dataset:str, mode:str, template=None)->dict:
+        text_cache_path = self.get_text_cache_path(dataset, mode, template)
         with open(text_cache_path, 'rb') as handle:
             texts = pickle.load(handle)
         return texts
 
-    def texts_exist(self, dataset:str, mode:str)->bool:
-        text_cache_path = self.get_text_cache_path(dataset, mode)
+    def texts_exist(self, dataset:str, mode:str, template=None)->bool:
+        text_cache_path = self.get_text_cache_path(dataset, mode, template)
         return os.path.isfile(text_cache_path)
 
-    def get_text_cache_path(self, dataset:str, mode:str)->str:
-        eval_name = f'{dataset}_{mode}'
+    def get_text_cache_path(self, dataset:str, mode:str, template=None)->str:
+        # get cache name dependening on parameters
+        if template == None:
+            eval_name = f"{dataset}_{mode}"
+        else:
+            eval_name = f"{dataset}_{mode}_{template.replace(' ', '-')}"
+
+        # load absolute path base on exp
         text_cache_path = os.path.join(self.exp_path, 'eval', f'{eval_name}.pk')
         return text_cache_path
 
     #== Model probability calculation method ======================================================#
     @torch.no_grad()
-    def generate_texts(self, dataset:str, mode:str='test', lim:int=None, num_beams:int=10):
+    def generate_texts(
+        self, 
+        dataset:str, 
+        mode:str='test', 
+        template=None, 
+        num_beams:int=4, 
+        lim:int=None
+    ):
         self.model.eval()
         self.to(self.device)
         set_rand_seed(1)
 
+        # set template if set
+        if template != None:
+            self.data_handler.template = template
+            
         eval_data = self.data_handler.prep_split(dataset, mode, lim)
         eval_batches = self.batcher(
             data = eval_data,
@@ -82,7 +99,7 @@ class Evaluater(Trainer):
             free_output = self.model.generate(
                 input_ids = batch.input_ids,
                 attention_mask = batch.attention_mask,
-                max_length = 256,
+                max_length = self.batcher.max_len,
                 num_beams = num_beams,
                 length_penalty = 0.6,
                 no_repeat_ngram_size = 4,
@@ -96,6 +113,50 @@ class Evaluater(Trainer):
             
             output[ex_id] = texts[0]
         return output
+
+    #== Teacher Forcing LogProbability distribution ===============================================#
+    def load_likelihood(self, dataset:str, mode:str='test', template=None):
+        if not self.likelihood_exists(dataset, mode, template):
+            self.setup_helpers()
+            metrics = self.calculate_likelihood(dataset, mode, template)
+            self.save_likelihood(metrics, dataset, mode, template)
+        metrics = self.load_cached_likelihood(dataset, mode, template)
+        return metrics
+
+    def calculate_likelihood(self, dataset:str, mode:str='test', template=None, lim:int=None):
+        if template != None:
+            self.data_handler.template = template
+            
+        eval_data = self.data_handler.prep_split(dataset, mode, lim)
+        self.to(self.device)
+        metrics = self.run_validation(eval_data, mode='test', tqdm_display=True)
+        return metrics
+    
+    def save_likelihood(self, texts:dict, dataset:str, mode:str, template:str=None):
+        likelihood_cache_path = self.get_likelihood_cache_path(dataset, mode, template)
+        with open(likelihood_cache_path, 'wb') as handle:
+            pickle.dump(texts, handle)
+
+    def load_cached_likelihood(self, dataset:str, mode:str, template:str=None)->dict:
+        likelihood_cache_path = self.get_likelihood_cache_path(dataset, mode, template)
+        with open(likelihood_cache_path, 'rb') as handle:
+            texts = pickle.load(handle)
+        return texts
+
+    def likelihood_exists(self, dataset:str, mode:str, template:str=None)->bool:
+        likelihood_cache_path = self.get_likelihood_cache_path(dataset, mode, template)
+        return os.path.isfile(likelihood_cache_path)
+
+    def get_likelihood_cache_path(self, dataset:str, mode:str, template:str=None)->str:
+        # get cache name dependening on parameters
+        if template == None:
+            eval_name = f"TF_{dataset}_{mode}"
+        else:
+            eval_name = f"TF_{dataset}_{mode}_{template.replace(' ', '-')}"
+
+        # load absolute path base on exp
+        text_cache_path = os.path.join(self.exp_path, 'eval', f'{eval_name}.pk')
+        return text_cache_path
 
     #== loading specific examples =================================================================#
     def load_ex(self, dataset:str, mode:str, k:int=0)->SimpleNamespace:
@@ -114,7 +175,7 @@ class Evaluater(Trainer):
         eval_data = DataHandler.load_split(dataset, mode)
         labels_dict = {}
         for ex in eval_data:
-            labels_dict[str(ex.ex_id)] = ex.label_text
+            labels_dict[ex.ex_id] = ex.label_text
         return labels_dict
 
     @staticmethod

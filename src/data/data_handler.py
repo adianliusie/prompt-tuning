@@ -8,7 +8,7 @@ from tqdm import tqdm
 from copy import deepcopy
 from functools import lru_cache
 
-from .load_wikibio import load_wikibio
+from .load_wikibio import load_wikibio, load_small_wikibio
 from ..models.pre_trained_trans import load_tokenizer
 from ..utils.general import get_base_dir, save_pickle, load_pickle
 
@@ -19,6 +19,7 @@ class DataHandler:
         self.trans_name = trans_name
         self.tokenizer = load_tokenizer(trans_name)
         self.template = template
+        print(template)
         
     #== Data processing (i.e. tokenizing text) ====================================================#
     @lru_cache (maxsize=10)
@@ -46,14 +47,15 @@ class DataHandler:
 
     def _prep_text(self, ex):
         template = self.template
-        template = template.replace('<t>', ex.text)
+        template = template.replace('<n>', ex.name)
         return template
         
     #== Data loading utils ========================================================================#
     @staticmethod
     @lru_cache(maxsize=10)
     def load_data(data_name:str, lim=None):
-        if   data_name == 'wikibio': train, dev, test = load_wikibio()
+        if   data_name == 'wikibio':   train, dev, test = load_wikibio()
+        elif data_name == 'wikibio-s': train, dev, test = load_small_wikibio()
         else: raise ValueError(f"invalid dataset name: {data_name}")
           
         train, dev, test = to_namespace(train, dev, test)

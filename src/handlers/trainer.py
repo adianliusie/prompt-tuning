@@ -141,7 +141,7 @@ class Trainer(object):
         self.log_metrics(metrics=self.best_dev[1], mode='dev-best', ex_step=self.best_dev[0])
 
     @torch.no_grad()
-    def run_validation(self, data, bsz:int=1, mode='dev'):
+    def run_validation(self, data, bsz:int=1, mode='dev', tqdm_display=False):
         self.model.eval()
         self.model_loss.reset_metrics()
 
@@ -151,8 +151,8 @@ class Trainer(object):
             shuffle = False
         )
 
-        for batch in val_batches:
-            self.model_loss.eval_forward(batch)
+        for batch in tqdm(val_batches, disable=(not tqdm_display)):
+            self.model_loss(batch)
         
         metrics = self.get_metrics()
         self.model.train()
